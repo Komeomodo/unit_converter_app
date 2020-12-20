@@ -3,6 +3,8 @@ import 'package:meta/meta.dart';
 import 'package:unit_converter_app/unit.dart';
 import 'package:unit_converter_app/category.dart';
 
+import 'api.dart';
+
 const _padding = EdgeInsets.all(16.0);
 
 /// Converter screen where users can input amounts to convert.
@@ -42,6 +44,9 @@ class _UnitConverterState extends State<UnitConverter> {
   String _convertedValue = '';
   List<DropdownMenuItem> _unitMenuItems;
   double _inputValue;
+  final _inputKey = GlobalKey(debugLabel: 'inputText');
+  bool _showErrorUI = false;
+
 
   @override
   void initState() {
@@ -106,11 +111,31 @@ class _UnitConverterState extends State<UnitConverter> {
     return outputNumber;
   }
 
-  void _updateConversion() {
-    setState(() {
-      _convertedValue =
-          _format((_toValue.conversion / _fromValue.conversion) * _inputValue);
-    });
+  Future <void> _updateConversion() async {
+    // Our API has a handy convert function, so we can use that for
+    // the Currency [Category]
+    if (widget.category.name == apiCategory['name']) {
+      final api = Api();
+      final conversion = await api.convert(apiCategory['route'],
+          _inputValue.toString(), _fromValue.name, _toValue.name);
+      // API error or not connected to the internet
+      if (conversion == null) {
+        setState(() {
+          _showErrorUI = true;
+        });
+      } else {
+        setState(() {
+          _showErrorUI = false;
+          _convertedValue = _format(conversion);
+        });
+      }
+    } else {
+      // For the static units, we do the conversion ourselves
+      setState(() {
+        _convertedValue = _format(
+            _inputValue * (_toValue.conversion / _fromValue.conversion));
+      });
+    }
   }
 
   Unit _getUnit(String unit_name) {
@@ -194,6 +219,37 @@ class _UnitConverterState extends State<UnitConverter> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.category.units == null ||
+        (widget.category.name == apiCategory['name'] && _showErrorUI)) {
+      return SingleChildScrollView(
+        child: Container(
+          margin: _padding,
+          padding: _padding,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16.0),
+            color: widget.category.color['error'],
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.error_outline,
+                size: 180.0,
+                color: Colors.white,
+              ),
+              Text(
+                "Oh no! We can't connect right now!",
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.headline.copyWith(
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+        )
+      );
+    }
     final input = Padding(
       padding: _padding,
       child: Column(
@@ -201,6 +257,7 @@ class _UnitConverterState extends State<UnitConverter> {
         children: <Widget>[
           // This is the widget that accepts text input.
           TextField(
+            key: _inputKey,
             keyboardType: TextInputType.number,
             onChanged: _updateInputValue,
             style: Theme.of(context).textTheme.headline4,
